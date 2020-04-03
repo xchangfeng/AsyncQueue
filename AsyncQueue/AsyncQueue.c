@@ -48,7 +48,7 @@ void queue_push_head(Queue *queue, void *data)
 void* queue_pop_tail(Queue *queue)
 {
 	if (queue == NULL)
-		return;
+		return NULL;
 
 	if (queue->tail)
 	{
@@ -75,6 +75,21 @@ List* queue_peek_tail_link(Queue *queue)
 		return NULL;
 
 	return queue->tail;
+}
+
+void queue_clear(Queue *queue)
+{
+	if (queue == NULL)
+		return;
+
+	while (queue->head)
+	{
+		List *free_list;
+		free_list = queue->head;
+		queue->head = queue->head->next;
+		free(free_list);
+	}
+	queue_init(queue);
 }
 
 //
@@ -183,4 +198,27 @@ void* async_queue_timeout_pop(AsyncQueue *queue,
 	ReleaseSRWLockExclusive(&queue->mutex);
 
 	return retval;
+}
+
+int async_queue_length(AsyncQueue *queue)
+{
+	int retval;
+
+	if (queue == NULL)
+		return 0;
+
+	AcquireSRWLockExclusive(&queue->mutex);
+	retval = queue->queue.length - queue->waiting_threads;
+	ReleaseSRWLockExclusive(&queue->mutex);
+
+	return retval;
+}
+
+void async_queue_destroy (AsyncQueue *queue)
+{
+	if (queue == NULL)
+		return ;
+
+    queue_clear(&queue->queue);
+    free(queue);
 }
