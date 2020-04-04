@@ -8,12 +8,85 @@
 
 
 #include "AsyncQueue.h"
-#include <synchapi.h>
 #include <stdio.h>
-#include <tchar.h>
 #include <stdlib.h>
 #include <math.h>
+
+
+
+#ifdef _WIN32
+
 #include <windows.h>
+
+void pthread_mutex_init_n(SRWLOCK *SRWLock)
+{
+  InitializeSRWLock(SRWLock);
+}
+
+void pthread_mutex_lock(SRWLOCK *SRWLock)
+{
+  AcquireSRWLockExclusive(SRWLock)
+}
+
+void pthread_mutex_unlock(SRWLOCK *SRWLock)
+{
+  ReleaseSRWLockExclusive(SRWLock)
+}
+
+BOOL pthread_cond_wait(CONDITION_VARIABLE *cond, SRWLOCK *mutex)
+{
+	return SleepConditionVariableSRW(&queue->cond, &queue->mutex, INFINITE, 0);
+}
+
+BOOL pthread_cond_wait_timeout_us(CONDITION_VARIABLE *cond, SRWLOCK *mutex, long long timeout)
+{
+	int timewait = timeout / 1000;
+	return SleepConditionVariableSRW(cond, mutex, timewait, 0);
+}
+
+void pthread_cond_signal(CONDITION_VARIABLE *cond)
+{
+	WakeConditionVariable(cond);
+}
+
+void pthread_cond_init_n(CONDITION_VARIABLE *cond)
+{
+	InitializeConditionVariable(cond);
+}
+
+#else
+
+#include <sys/time.h>
+int pthread_mutex_init_n(pthread_mutex_t *mutex)
+{
+	return pthread_mutex_init(mutex, NULL);
+}
+
+int pthread_cond_wait_timeout_us(pthread_cond_t *cond, pthread_mutex_t *mutex, long long timeout)
+{
+	struct timespec ts;
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+
+	tv.tv_usec += timeout;
+	tv.tv_sec += tv.tv_usec / 1000000;
+	tv.tv_usec = tv.tv_usec % 1000000;
+
+    ts.tv_sec = tv.tv_sec;
+    ts.tv_nsec = tv.tv_usec * 1000;
+
+    int retval;
+	retval =  pthread_cond_timedwait(cond, mutex, &ts);
+    
+	return !retval;
+}
+
+int pthread_cond_init_n(pthread_cond_t  *cond)
+{
+	return pthread_cond_init(cond,NULL);
+}
+
+#endif
 
 //队列初始化函数
 void queue_init(Queue *queue)
@@ -106,8 +179,8 @@ AsyncQueue* async_queue_new(void)
 	if (queue == NULL)
 		return NULL;
 
-	InitializeSRWLock(&queue->mutex);
-	InitializeConditionVariable(&queue->cond);
+	pthread_mutex_init_n(&queue->mutex);
+	pthread_cond_init_n(&queue->cond);
 	queue_init(&queue->queue);
 	queue->waiting_threads = 0;
 	queue->ref_count = 1;
@@ -124,18 +197,18 @@ void async_queue_push(AsyncQueue *queue, void *data)
 	if (data == NULL)
 		return;
 
-	AcquireSRWLockExclusive(&queue->mutex);
+	pthread_mutex_lock(&queue->mutex);
 
 	queue_push_head (&queue->queue, data);
     if (queue->waiting_threads > 0)
-		WakeConditionVariable(&queue->cond);
+		pthread_cond_signal(&queue->cond);
 
-	ReleaseSRWLockExclusive(&queue->mutex);
+	pthread_mutex_unlock(&queue->mutex);
 }
 
 static void* async_queue_pop_intern_unlocked(AsyncQueue *queue,
 	BOOL     wait,
-	int       end_time)
+	long long       end_time)
 {
 	void *retval;
 
@@ -145,10 +218,10 @@ static void* async_queue_pop_intern_unlocked(AsyncQueue *queue,
 		while (!queue_peek_tail_link(&queue->queue))
 		{
 			if (end_time == -1)
-			    SleepConditionVariableSRW(&queue->cond, &queue->mutex, INFINITE, 0);
+			    pthread_cond_wait(&queue->cond, &queue->mutex);
 			else
 			{
-				if (!SleepConditionVariableSRW(&queue->cond, &queue->mutex, end_time, 0)) //end_time与持续时间不同
+				if (!pthread_cond_wait_timeout_us(&queue->cond, &queue->mutex, end_time))
 					break;
 			}
 		}
@@ -169,9 +242,9 @@ void* async_queue_pop(AsyncQueue *queue)
 	if (queue == NULL)
 		return NULL;
 
-	AcquireSRWLockExclusive(&queue->mutex);
+	pthread_mutex_lock(&queue->mutex);
 	retval = async_queue_pop_intern_unlocked(queue, TRUE, -1);
-	ReleaseSRWLockExclusive(&queue->mutex);
+	pthread_mutex_unlock(&queue->mutex);
 
 	return retval;
 }
@@ -183,16 +256,16 @@ void* async_queue_try_pop(AsyncQueue *queue)
 	if (queue == NULL)
 		return NULL;
 
-	AcquireSRWLockExclusive(&queue->mutex);
+	pthread_mutex_lock(&queue->mutex);
 	retval = async_queue_pop_intern_unlocked(queue, FALSE, -1);
-	ReleaseSRWLockExclusive(&queue->mutex);
+	pthread_mutex_unlock(&queue->mutex);
 
 	return retval;
 }
 
 //timeout单位是ms
 void* async_queue_timeout_pop(AsyncQueue *queue,
-	int    timeout)
+	long long    timeout)
 {
 	//long end_time = g_get_monotonic_time() + timeout;
 	void *retval;
@@ -200,9 +273,9 @@ void* async_queue_timeout_pop(AsyncQueue *queue,
 	if (queue == NULL)
 		return NULL;
 
-	AcquireSRWLockExclusive(&queue->mutex);
+	pthread_mutex_lock(&queue->mutex);
 	retval = async_queue_pop_intern_unlocked(queue, TRUE, timeout);
-	ReleaseSRWLockExclusive(&queue->mutex);
+	pthread_mutex_unlock(&queue->mutex);
 
 	return retval;
 }
@@ -214,9 +287,9 @@ int async_queue_length(AsyncQueue *queue)
 	if (queue == NULL)
 		return 0;
 
-	AcquireSRWLockExclusive(&queue->mutex);
+	pthread_mutex_lock(&queue->mutex);
 	retval = queue->queue.length - queue->waiting_threads;
-	ReleaseSRWLockExclusive(&queue->mutex);
+	pthread_mutex_unlock(&queue->mutex);
 
 	return retval;
 }
