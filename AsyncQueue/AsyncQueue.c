@@ -37,6 +37,10 @@ void queue_push_head(Queue *queue, void *data)
 		return;
 	new_list->data = data;
 	new_list->next = queue->head;
+	if (queue->head)
+	{
+		queue->head->prev = new_list;
+	}
 	new_list->prev = NULL;
 	queue->head = new_list;
 
@@ -94,13 +98,14 @@ void queue_clear(Queue *queue)
 
 //
 //异步队列初始化函数，同时开启空间使用。
-AsyncQueue * async_queue_new(void)
+AsyncQueue* async_queue_new(void)
 {
 	AsyncQueue *queue;
 
 	queue =(AsyncQueue *) malloc(sizeof(AsyncQueue));
 	if (queue == NULL)
 		return NULL;
+
 	InitializeSRWLock(&queue->mutex);
 	InitializeConditionVariable(&queue->cond);
 	queue_init(&queue->queue);
@@ -113,13 +118,14 @@ AsyncQueue * async_queue_new(void)
 
 void async_queue_push(AsyncQueue *queue, void *data)
 {
+
 	if (queue == NULL)
 		return;
 	if (data == NULL)
 		return;
 
 	AcquireSRWLockExclusive(&queue->mutex);
-	
+
 	queue_push_head (&queue->queue, data);
     if (queue->waiting_threads > 0)
 		WakeConditionVariable(&queue->cond);
@@ -170,7 +176,7 @@ void* async_queue_pop(AsyncQueue *queue)
 	return retval;
 }
 
-void *async_queue_try_pop(AsyncQueue *queue)
+void* async_queue_try_pop(AsyncQueue *queue)
 {
 	void *retval;
 
@@ -184,6 +190,7 @@ void *async_queue_try_pop(AsyncQueue *queue)
 	return retval;
 }
 
+//timeout单位是us
 void* async_queue_timeout_pop(AsyncQueue *queue,
 	long      timeout)
 {
