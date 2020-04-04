@@ -190,7 +190,7 @@ void* async_queue_try_pop(AsyncQueue *queue)
 	return retval;
 }
 
-//timeout单位是us
+//timeout单位是ms
 void* async_queue_timeout_pop(AsyncQueue *queue,
 	int    timeout)
 {
