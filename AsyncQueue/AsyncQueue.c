@@ -15,7 +15,8 @@
 
 
 #ifdef _WIN32
-
+// For WIN system rewrite a lot of mutex and cond function to linux-like.
+// 重写Win下不少函数，使之与Linux下的形式较为一致，方便后续调用
 #include <windows.h>
 
 void pthread_mutex_init_n(SRWLOCK *SRWLock)
@@ -38,8 +39,11 @@ BOOL pthread_cond_wait(CONDITION_VARIABLE *cond, SRWLOCK *mutex)
 	return SleepConditionVariableSRW(cond, mutex, INFINITE, 0);
 }
 
+// Wait for the wake during the timeout. the unit of timeout is us.
+// 在超时时间内等待其他线程唤醒，timeout的单位是us。
 BOOL pthread_cond_wait_timeout_us(CONDITION_VARIABLE *cond, SRWLOCK *mutex, long long timeout)
 {
+	// The unit of timeout in Win is ms, thus divided by 1000. Win下的时间单位是ms，所以除1000。
 	int timewait = timeout / 1000;
 	return SleepConditionVariableSRW(cond, mutex, timewait, 0);
 }
@@ -55,13 +59,26 @@ void pthread_cond_init_n(CONDITION_VARIABLE *cond)
 }
 
 #else
-
+// Some function that need in Linux system. the init function is rewrite because not easy to fit in Windows
+// 重写部分Linux下的调用函数，两个初始化函数因为要多带一参量，与Win不同，所以也重写了。
 #include <sys/time.h>
 int pthread_mutex_init_n(pthread_mutex_t *mutex)
 {
 	return pthread_mutex_init(mutex, NULL);
 }
 
+int pthread_cond_init_n(pthread_cond_t  *cond)
+{
+	return pthread_cond_init(cond,NULL);
+}
+
+// Wait for the wake during the timeout. the unit of timeout is us.
+// In linux, The funtion of timedwait is absolute time. So, By add timeout to the time of now to get the until time.
+// The unit of timeout is us.
+// Notice the return is Negate of the origin value.
+// 在超时时间内等待其他线程唤醒，timeout的单位是us。
+// 在Linux系统下，这个等待是一个绝对时间，所以需要把超时时间加到当前时间上来。
+// 注意返回值在原来函数的返回值的基础上取反
 int pthread_cond_wait_timeout_us(pthread_cond_t *cond, pthread_mutex_t *mutex, long long timeout)
 {
 	struct timespec ts;
@@ -81,14 +98,10 @@ int pthread_cond_wait_timeout_us(pthread_cond_t *cond, pthread_mutex_t *mutex, l
 	return !retval;
 }
 
-int pthread_cond_init_n(pthread_cond_t  *cond)
-{
-	return pthread_cond_init(cond,NULL);
-}
-
 #endif
 
-//队列初始化函数
+// Initialization of the queue
+// 队列初始化函数
 void queue_init(Queue *queue)
 {
 	if (queue == NULL)
@@ -98,6 +111,8 @@ void queue_init(Queue *queue)
 	queue->length = 0;
 }
 
+// Push a data point to the queue head，and increase the leagth for 1.
+// 将一个数据指针推送到队列头，并将队列长度增加1。
 void queue_push_head(Queue *queue, void *data)
 {
 	if (queue == NULL)
@@ -122,6 +137,8 @@ void queue_push_head(Queue *queue, void *data)
 	queue->length++;
 }
 
+// Pop a data From the tail of the queue and return the point, If there isn't a data, Then return NUll.
+// 从队列尾推出一个数据，并返回这个数据指针。如果没有数据，则返回NULL。
 void* queue_pop_tail(Queue *queue)
 {
 	if (queue == NULL)
@@ -146,6 +163,8 @@ void* queue_pop_tail(Queue *queue)
 	return NULL;
 }
 
+// Check If there is data or not in the queue.
+// 查看队列是否有数据 
 List* queue_peek_tail_link(Queue *queue)
 {
 	if (queue == NULL)
@@ -154,6 +173,9 @@ List* queue_peek_tail_link(Queue *queue)
 	return queue->tail;
 }
 
+// Release all the queue, but not the data point. 
+// If the data point is generate by malloc, it should free first.
+// 释放队列，但不是队列中data指向的数据，如果队列的data是开辟的空间，应先释放。
 void queue_clear(Queue *queue)
 {
 	if (queue == NULL)
@@ -169,7 +191,7 @@ void queue_clear(Queue *queue)
 	queue_init(queue);
 }
 
-//
+//creat a AsyncQueue and Initialization of mutex and cond
 //异步队列初始化函数，同时开启空间使用。
 AsyncQueue* async_queue_new(void)
 {
@@ -188,7 +210,9 @@ AsyncQueue* async_queue_new(void)
 	return queue;
 }
 
-
+// Push a point data to the AsyncQueue head. After this, the queue length will increase one.
+// input AsyncQueue point; data point.
+// 将数据指针推送到异步队形头，然后队列长度增加1。 输入参数： 队列指针，数据指针。
 void async_queue_push(AsyncQueue *queue, void *data)
 {
 
@@ -206,9 +230,15 @@ void async_queue_push(AsyncQueue *queue, void *data)
 	pthread_mutex_unlock(&queue->mutex);
 }
 
+// The inter function of pop, include pop, trypop, timeoutpop.
+// BOOL wait，for TRUE is wait, used in pop and timeoutpop. FALSE is used in trypop.
+// timeout is wating time, -1 in pop and try pop, Other is time in us for timeoutpop.
+// pop使用的内部函数，包括pop, trypop, timeoutpop.
+// wait量，当是TRUE的时候，用于pop和timeoutpop；当是FALSE的时候，用于trypop。
+// timeout是等待时间，当是pop和trypop时用-1，否则用于等待时间，单位是us。
 static void* async_queue_pop_intern_unlocked(AsyncQueue *queue,
 	BOOL     wait,
-	long long       end_time)
+	long long       timeout)
 {
 	void *retval;
 
@@ -217,11 +247,11 @@ static void* async_queue_pop_intern_unlocked(AsyncQueue *queue,
 		queue->waiting_threads++;
 		while (!queue_peek_tail_link(&queue->queue))
 		{
-			if (end_time == -1)
+			if (timeout == -1)
 			    pthread_cond_wait(&queue->cond, &queue->mutex);
 			else
 			{
-				if (!pthread_cond_wait_timeout_us(&queue->cond, &queue->mutex, end_time))
+				if (!pthread_cond_wait_timeout_us(&queue->cond, &queue->mutex, timeout))
 					break;
 			}
 		}
@@ -235,6 +265,9 @@ static void* async_queue_pop_intern_unlocked(AsyncQueue *queue,
 	return retval;
 }
 
+// Pop a point of the data from AsyncQueue tail, After this, the queue length will decrease one and return a point.
+// It will waiting point until there is one. It is a blocking function.
+// 将一个数据从队列中弹出，然后队列长度减少1，返回数据的指针。 这个函数会一直等到有数据，这是一个阻塞函数。
 void* async_queue_pop(AsyncQueue *queue)
 {
 	void *retval;
@@ -249,6 +282,9 @@ void* async_queue_pop(AsyncQueue *queue)
 	return retval;
 }
 
+// Try Pop a point of the data from AsyncQueue tail, If successed, the queue length will decrease one and return a point.
+// If not successed, it return NULL. This function return immediately.
+// 尝试将一数据从队列中弹出，如果成功，队列长度减少1，返回数据指针。 如果无数据，就返回NULL，这个函数是立即返回。
 void* async_queue_try_pop(AsyncQueue *queue)
 {
 	void *retval;
@@ -263,7 +299,12 @@ void* async_queue_try_pop(AsyncQueue *queue)
 	return retval;
 }
 
-//timeout单位是ms
+// Pop a point of the data from AsyncQueue tail until the timeout. 
+// If during the timeout, there is data, the queue length will decrease one and return a point.
+// If during the timeout, there is no data, it return NULL.
+// the unit of timeout is us.
+// 在等待的时间内尝试将一数据从队列中弹出，如果成功，队列长度减少1，返回数据指针。 如果无数据，就返回NULL。
+// 这个函数的返回时间是小于等于等待时间的。
 void* async_queue_timeout_pop(AsyncQueue *queue,
 	long long    timeout)
 {
@@ -280,6 +321,8 @@ void* async_queue_timeout_pop(AsyncQueue *queue,
 	return retval;
 }
 
+// return the length of AsyncQueue
+// 返回异步队列的长度
 int async_queue_length(AsyncQueue *queue)
 {
 	int retval;
@@ -294,11 +337,16 @@ int async_queue_length(AsyncQueue *queue)
 	return retval;
 }
 
+// release the AsyncQueue
+// 释放异步队列资源
 void async_queue_destroy (AsyncQueue *queue)
 {
 	if (queue == NULL)
 		return ;
-
+#ifndef _WIN32
+	pthread_mutex_destroy(&queue->mutex);
+	pthread_cond_destroy(&queue->cond);
+#endif
     queue_clear(&queue->queue);
     free(queue);
 }
