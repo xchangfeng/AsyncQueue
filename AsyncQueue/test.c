@@ -36,11 +36,11 @@ DWORD WINAPI comsumer(LPVOID lpParameter)
 	{
 		Sleep(1000);
 		int *comsumerdata;
-		//comsumerdata = async_queue_pop(pThreadData);
+		comsumerdata = async_queue_pop(pThreadData);
 
-		//comsumerdata = async_queue_try_pop(pThreadData);
+		// comsumerdata = async_queue_try_pop(pThreadData);
 
-		comsumerdata = async_queue_timeout_pop(pThreadData,1000);
+		// comsumerdata = async_queue_timeout_pop(pThreadData,3000000);
 
 		if (comsumerdata != NULL)
 		{

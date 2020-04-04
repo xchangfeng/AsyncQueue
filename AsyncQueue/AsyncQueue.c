@@ -25,17 +25,17 @@ void pthread_mutex_init_n(SRWLOCK *SRWLock)
 
 void pthread_mutex_lock(SRWLOCK *SRWLock)
 {
-  AcquireSRWLockExclusive(SRWLock)
+	AcquireSRWLockExclusive(SRWLock);
 }
 
 void pthread_mutex_unlock(SRWLOCK *SRWLock)
 {
-  ReleaseSRWLockExclusive(SRWLock)
+	ReleaseSRWLockExclusive(SRWLock);
 }
 
 BOOL pthread_cond_wait(CONDITION_VARIABLE *cond, SRWLOCK *mutex)
 {
-	return SleepConditionVariableSRW(&queue->cond, &queue->mutex, INFINITE, 0);
+	return SleepConditionVariableSRW(cond, mutex, INFINITE, 0);
 }
 
 BOOL pthread_cond_wait_timeout_us(CONDITION_VARIABLE *cond, SRWLOCK *mutex, long long timeout)
