@@ -135,7 +135,7 @@ void async_queue_push(AsyncQueue *queue, void *data)
 
 static void* async_queue_pop_intern_unlocked(AsyncQueue *queue,
 	BOOL     wait,
-	long long       end_time)
+	int       end_time)
 {
 	void *retval;
 
@@ -192,7 +192,7 @@ void* async_queue_try_pop(AsyncQueue *queue)
 
 //timeout单位是us
 void* async_queue_timeout_pop(AsyncQueue *queue,
-	long long     timeout)
+	int    timeout)
 {
 	//long end_time = g_get_monotonic_time() + timeout;
 	void *retval;

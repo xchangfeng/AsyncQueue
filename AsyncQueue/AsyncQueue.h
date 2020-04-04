@@ -39,6 +39,6 @@ void async_queue_push(AsyncQueue *queue, void *data);
 void* async_queue_pop(AsyncQueue *queue);
 void* async_queue_try_pop(AsyncQueue *queue);
 void* async_queue_timeout_pop(AsyncQueue *queue,
-	long long      timeout);
+	int     timeout);
 int async_queue_length(AsyncQueue *queue);
 void async_queue_destroy(AsyncQueue *queue);
