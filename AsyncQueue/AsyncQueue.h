@@ -61,6 +61,27 @@ struct _AsyncQueue
 
 #endif
 
+// Initialization of the queue
+// 队列初始化函数
+void queue_init(Queue *queue);
+
+// Push a data point to the queue head，and increase the leagth for 1.
+// 将一个数据指针推送到队列头，并将队列长度增加1。
+void queue_push_head(Queue *queue, void *data);
+
+// Pop a data From the tail of the queue and return the point, If there isn't a data, Then return NUll.
+// 从队列尾推出一个数据，并返回这个数据指针。如果没有数据，则返回NULL。
+void* queue_pop_tail(Queue *queue);
+
+// Release all the queue, but not the data point. 
+// If the data point is generate by malloc, it should free first.
+// 释放队列，但不是队列中data指向的数据，如果队列的data是开辟的空间，应先释放。
+void queue_clear(Queue *queue);
+
+// Check If there is data or not in the queue.
+// 查看队列是否有数据 
+List* queue_peek_tail_link(Queue *queue);
+
 // Creat a AsyncQueue. 
 // If successed, it return a point to a AsyncQueue. 
 // Otherwise, it return a NULL point.
