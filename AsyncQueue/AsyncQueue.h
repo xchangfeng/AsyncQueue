@@ -60,6 +60,9 @@ struct _AsyncQueue
 };
 
 #endif
+//add a new point to the List
+//向队列中增加一个指针
+List* list_append(List *list, void* data);
 
 // Initialization of the queue
 // 队列初始化函数

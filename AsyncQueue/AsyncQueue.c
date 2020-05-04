@@ -100,6 +100,48 @@ int pthread_cond_wait_timeout_us(pthread_cond_t *cond, pthread_mutex_t *mutex, l
 
 #endif
 
+//return the last point of the List, if List is NULL,return NULL.
+//返回队列尾的指针，如果List是NULL，那就返回NULL
+List* list_last(List *list)
+{
+    if (list)
+    {
+        while (list->next)
+            list = list->next;
+    }
+
+    return list;
+}
+
+//add a new point to the List
+//向队列中增加一个指针
+List* list_append(List *list, void* data)
+{
+    List *new_list;
+    List *last;
+
+    new_list = (List *)malloc(sizeof(List));
+    if (new_list == NULL)
+    {
+        //error
+        return NULL;
+    }
+
+    new_list->data = data;
+    new_list->next = NULL;
+
+    if (list == NULL)
+    {
+        return new_list;
+    }
+    else
+    {
+        last = list_last(list);
+        last->next = new_list;
+        return list;
+    }
+}
+
 // Initialization of the queue
 // 队列初始化函数
 void queue_init(Queue *queue)
